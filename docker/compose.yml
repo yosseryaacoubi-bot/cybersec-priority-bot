@@ -1,0 +1,11 @@
+services:
+  cybersec_priority_bot:
+    image: ghcr.io/taranis-ai/taranis-cybersec-priority-bot:latest
+    environment:
+      DEBUG: "${DEBUG:-False}"
+      MODEL: "${MODEL:-criticality_classifier}"
+      API_KEY: "${API_KEY:-testkey}"
+      # add additional env vars
+    ports:
+      - "${BOT_PORT:-5500}:8000"
+    restart: unless-stopped

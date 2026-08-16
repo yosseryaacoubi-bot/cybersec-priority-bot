@@ -1,0 +1,61 @@
+[project]
+name = "cybersec-priority-bot"
+description = "Bot for prioritizing cyber threat stories by severity level, with AI-generated explanations and action recommendations for analysts"
+readme = "README.md"
+license = {file = "LICENSE.md"}
+maintainers = [{ name = "AIT", email = "yosseryaacoubi@gmail.com" }]
+classifiers = [
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+requires-python = ">=3.13, <3.14"
+dependencies = [
+    "taranis-base-bot",
+    "transformers",
+    "torch",
+    "sentence-transformers",
+    "groq",
+    "httpx",
+    "xgboost",
+    "imbalanced-learn",
+    "numpy",
+    "scikit-learn"
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.urls]
+"Source Code" = "https://github.com/yosseryaacoubi-bot/cybersec-priority-bot"
+
+[build-system]
+requires = [
+    "setuptools>=61",
+    "setuptools_scm[toml]>=6.2",
+    "wheel"
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+fallback_version = "0.0.0"
+tag_regex = "^(?:refs/pull/\\d+/merge$|v(?P<version>\\d+\\.\\d+\\.\\d+))$"
+
+[tool.setuptools]
+packages = ["cybersec_priority_bot"]
+
+[tool.ruff]
+line-length = 142
+target-version = "py313"
+
+[tool.ruff.lint]
+ignore = ["E402"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:.*_app_ctx_stack.*:DeprecationWarning",
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning"
+]

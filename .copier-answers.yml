@@ -1,0 +1,9 @@
+# DO NOT CHANGE -> WILL BREAK copier LOGIC
+_commit: 1.0.0
+_src_path: https://github.com/taranis-ai/bot_template.git
+author_mail: yosseryaacoubi@gmail.com
+description: Bot for prioritizing cyber threat stories by severity level, with AI-generated
+    explanations and action recommendations for analysts
+models: criticality_classifier
+project_name: cybersec-priority-bot
+repo_url: https://github.com/yosseryaacoubi-bot/cybersec-priority-bot

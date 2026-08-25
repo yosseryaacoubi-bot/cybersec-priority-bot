@@ -38,7 +38,7 @@ class CriticalityClassifier:
         from sentence_transformers import SentenceTransformer
         self.embed_model = SentenceTransformer("all-MiniLM-L6-v2")
 
-        self.groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        self.groq_client = None  # initialisation différée (lazy) : la clé n'est pas disponible au moment du build Docker
         self.nvd_api_key = os.environ.get("NVD_API_KEY")  # optionnel mais recommandé
 
         # En dev (mode natif, core hors Docker) : http://host.docker.internal:5001
@@ -149,6 +149,11 @@ class CriticalityClassifier:
 
         return np.array(tabular, dtype=float), enrichment["max_cvss"], has_kev, len(cve_ids)
 
+    def _get_groq_client(self) -> Groq:
+        if self.groq_client is None:
+            self.groq_client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+        return self.groq_client
+
     def _calculer_signal_vigilance(self, max_cvss, has_kev) -> str:
         if has_kev or (max_cvss is not None and max_cvss >= 7):
             return "fort"
@@ -217,8 +222,8 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, respe
         urgence = self.urgence_map[niveau_predit]
 
         prompt = self._construire_prompt(title, niveau_predit, max_cvss, has_kev, nb_cve)
-        completion = self.groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+        completion = self._get_groq_client().chat.completions.create(
+            model="openai/gpt-oss-120b",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.0,
             max_tokens=400,

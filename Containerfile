@@ -1,5 +1,4 @@
 FROM python:3.13-slim AS builder
-
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 WORKDIR /app/
 
@@ -9,28 +8,31 @@ RUN apt-get update && apt-get upgrade -y && apt-get install --no-install-recomme
     python3-dev \
     git
 
-COPY . /app/
+# Copie uniquement les fichiers de dépendances d'abord, pour que les changements
+# de code source (ci-dessous) n'invalident pas le cache de cette étape.
+COPY pyproject.toml uv.lock ./
 
 ENV UV_COMPILE_BYTECODE=1
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv venv && \
+    export PATH="/app/.venv/bin:$PATH" && \
+    uv sync --frozen --no-install-project
 
-RUN uv venv && \
+# Le code source est copié après uv sync : le modifier ne force plus le
+# retéléchargement des dépendances, seule cette dernière étape est refaite.
+COPY . /app/
+RUN --mount=type=cache,target=/root/.cache/uv \
     export PATH="/app/.venv/bin:$PATH" && \
     uv sync --frozen
 
 FROM python:3.13-slim
-
 ARG MODEL="criticality_classifier"
-
 WORKDIR /app/
-
 RUN groupadd user && useradd --home-dir /app -g user user && chown -R user:user /app
-
 COPY --from=builder --chown=user:user /app/.venv /app/.venv
 COPY --chown=user:user cybersec_priority_bot /app/cybersec_priority_bot
 COPY --chown=user:user README.md app.py LICENSE.md /app/
-
 USER user
-
 ENV PYTHONOPTIMIZE=1
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONPATH=/app
@@ -41,10 +43,7 @@ ENV GRANIAN_INTERFACE=asgi
 ENV GRANIAN_HOST=0.0.0.0
 ENV GRANIAN_LOG_ACCESS_ENABLED=1
 ENV MODEL=${MODEL}
-
 # bake models in to the image
 RUN python -c 'from cybersec_priority_bot.config import Config; from taranis_base_bot.misc import get_model; get_model(Config)'
-
 EXPOSE 8000
-
 CMD ["granian", "app"]

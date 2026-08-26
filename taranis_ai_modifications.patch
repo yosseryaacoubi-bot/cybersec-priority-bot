@@ -1,0 +1,111 @@
+diff --git a/src/core/core/managers/pre_seed_data.py b/src/core/core/managers/pre_seed_data.py
+index 079695da..79430e7e 100644
+--- a/src/core/core/managers/pre_seed_data.py
++++ b/src/core/core/managers/pre_seed_data.py
+@@ -249,6 +249,20 @@ workers = [
+         ],
+         "description": "Bot for classifying news items into cybersecurity/non-cybersecurity related",
+     },
++    {
++        "type": "CRITICALITY_CLASSIFIER_BOT",
++        "name": "Criticality classification bot",
++        "parameters": [
++            {"parameter": "ITEM_FILTER"},
++            {"parameter": "REQUESTS_TIMEOUT", "type": "text", "rules": "positive_int"},
++            {"parameter": "BOT_API_KEY"},
++            {"parameter": "BOT_ENDPOINT", "value": "http://cybersec-priority-bot:8000/"},
++            {"parameter": "RUN_AFTER_COLLECTOR", "type": "switch"},
++            {"parameter": "RUN_AFTER_BOTS"},
++            {"parameter": "REFRESH_INTERVAL", "type": "cron_interval"},
++        ],
++        "description": "Bot for prioritizing cyber threat stories by severity level, with AI-generated explanations and action recommendations for analysts",
++    },
+     {
+         "type": "PANDOC_PRESENTER",
+         "description": "Presenter for generating .odt & .docx documents",
+@@ -483,6 +497,11 @@ bots = [
+         "description": "Bot for classifying news items into cybersecurity/non-cybersecurity related",
+         "type": "CYBERSEC_CLASSIFIER_BOT",
+     },
++    {
++        "name": "Criticality Classifier Bot",
++        "description": "Bot for prioritizing cyber threat stories by severity level, with AI-generated explanations and action recommendations for analysts",
++        "type": "CRITICALITY_CLASSIFIER_BOT",
++    },
+ ]
+ 
+ # ADD NEW REPORT TYPE AT THE END OF THE LIST.
+diff --git a/src/frontend/frontend/templates/assess/story_edit_content.html b/src/frontend/frontend/templates/assess/story_edit_content.html
+index 827a615e..1653309b 100644
+--- a/src/frontend/frontend/templates/assess/story_edit_content.html
++++ b/src/frontend/frontend/templates/assess/story_edit_content.html
+@@ -198,7 +198,7 @@
+                 <template x-for="(attribute, index) in attributes" :key="index">
+                   <div class="flex gap-3">
+                     <input class="input input-bordered input-sm flex-grow" type="text" x-model="attribute.key" name="attributes[][key]" data-testid="attribute-key-input" placeholder="Key (e.g. TLP)">
+-                    <input class="input input-bordered input-sm flex-grow" type="text" x-model="attribute.value" name="attributes[][value]" data-testid="attribute-value-input" placeholder="Value">
++                    <textarea class="textarea textarea-bordered textarea-sm flex-grow resize-y" x-model="attribute.value" name="attributes[][value]" data-testid="attribute-value-input" placeholder="Value" rows="1" x-init="$el.style.height = 'auto'; $el.style.height = $el.scrollHeight + 'px'" @input="$el.style.height = 'auto'; $el.style.height = $el.scrollHeight + 'px'"></textarea>
+                     <button type="button" class="btn btn-ghost btn-xs text-error flex-shrink" @click="removeAttribute(index)">Remove</button>
+                   </div>
+                 </template>
+diff --git a/src/models/models/types.py b/src/models/models/types.py
+index 00c8d9a4..10fceb6b 100644
+--- a/src/models/models/types.py
++++ b/src/models/models/types.py
+@@ -91,6 +91,7 @@ class BOT_TYPES(StrEnum):
+     WORDLIST_BOT = auto()
+     SENTIMENT_ANALYSIS_BOT = auto()
+     CYBERSEC_CLASSIFIER_BOT = auto()
++    CRITICALITY_CLASSIFIER_BOT = auto()
+ 
+     @classmethod
+     def _missing_(cls, value):
+@@ -156,6 +157,7 @@ class WORKER_TYPES(StrEnum):
+     SUMMARY_BOT = auto()
+     SENTIMENT_ANALYSIS_BOT = auto()
+     CYBERSEC_CLASSIFIER_BOT = auto()
++    CRITICALITY_CLASSIFIER_BOT = auto()
+     WORDLIST_BOT = auto()
+     PANDOC_PRESENTER = auto()
+     PDF_PRESENTER = auto()
+diff --git a/src/worker/worker/bots/__init__.py b/src/worker/worker/bots/__init__.py
+index f778794f..b3bf4981 100644
+--- a/src/worker/worker/bots/__init__.py
++++ b/src/worker/worker/bots/__init__.py
+@@ -1,5 +1,6 @@
+ from worker.bots.analyst_bot import AnalystBot
+ from worker.bots.cybersec_classifier_bot import CyberSecClassifierBot
++from worker.bots.criticality_classifier_bot import CriticalityClassifierBot
+ from worker.bots.grouping_bot import GroupingBot
+ from worker.bots.intelowl_bot import IntelOwlBot
+ from worker.bots.ioc_bot import IOCBot
+@@ -23,4 +24,5 @@ __all__ = [
+     "SummaryBot",
+     "SentimentAnalysisBot",
+     "CyberSecClassifierBot",
++    "CriticalityClassifierBot",
+ ]
+diff --git a/src/worker/worker/bots/bot_tasks.py b/src/worker/worker/bots/bot_tasks.py
+index 90cb2368..49ab1388 100644
+--- a/src/worker/worker/bots/bot_tasks.py
++++ b/src/worker/worker/bots/bot_tasks.py
+@@ -105,6 +105,7 @@ def _execute_by_config(bot_config: dict, filter: dict | None = None, bot_id: str
+         "summary_bot": worker.bots.SummaryBot(),
+         "sentiment_analysis_bot": worker.bots.SentimentAnalysisBot(),
+         "cybersec_classifier_bot": worker.bots.CyberSecClassifierBot(),
++        "criticality_classifier_bot": worker.bots.CriticalityClassifierBot(),
+     }
+ 
+     bot_type = bot_config.get("type")
+diff --git a/src/worker/worker/config.py b/src/worker/worker/config.py
+index 5240822e..487140d7 100755
+--- a/src/worker/worker/config.py
++++ b/src/worker/worker/config.py
+@@ -36,6 +36,7 @@ class Settings(BaseSettings):
+     SENTIMENT_ANALYSIS_API_ENDPOINT: str = "http://llm-bot:8000/sentiment"
+     CYBERSEC_CLASSIFIER_API_ENDPOINT: str = "http://llm-bot:8000/cybersec-classification"
+     CYBERSEC_CLASSIFIER_THRESHOLD: float = 0.65
++    CRITICALITY_CLASSIFIER_API_ENDPOINT: str = "http://cybersec_priority_bot:8000/"
+     CRON_POLL_INTERVAL_SECONDS: float = 15.0
+ 
+     @field_validator("TARANIS_BASE_PATH", mode="before")

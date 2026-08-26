@@ -7,7 +7,9 @@ class Settings(CommonSettings):
     PACKAGE_NAME: str = "cybersec_priority_bot"
     HF_MODEL_INFO: bool = False
     PAYLOAD_SCHEMA: dict[str, dict] = {
-        "story_id": {"type": "str", "required": True},
+        "title": {"type": "str", "required": True},
+        "tags": {"required": False},
+        "news_items": {"required": False},
     }
 
 

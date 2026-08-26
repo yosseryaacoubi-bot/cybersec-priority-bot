@@ -185,28 +185,19 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, respe
   "note_analyste": "note libre signalant une éventuelle tension entre les faits chiffrés et le niveau prédit (vide si cohérent)"
 }}"""
 
-    async def _fetch_story(self, story_id: str) -> dict:
-        headers = {"Authorization": f"Bearer {self.taranis_api_key}"} if self.taranis_api_key else {}
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(
-                f"{self.taranis_core_url}/api/assess/stories/{story_id}",
-                headers=headers,
-                timeout=15,
-            )
-            resp.raise_for_status()
-            return resp.json()
-
     async def predict(self, **kwargs) -> dict:
-        story_id = kwargs["story_id"]
-        story_data = await self._fetch_story(story_id)
+        title = kwargs["title"]
+        tags = kwargs.get("tags", [])
+        news_items = kwargs.get("news_items", [])
+        if not tags and news_items:
+            tags = [t for item in news_items for t in item.get("tags", [])]
 
-        title = story_data["title"]
         cve_ids = list(dict.fromkeys(
-            t["name"] for t in story_data.get("tags", []) if t["tag_type"] == "cves"
+            t["name"] for t in tags if t["tag_type"] == "cves"
         ))
-        nb_domains = sum(1 for t in story_data.get("tags", []) if t["tag_type"] == "domains")
-        nb_urls = sum(1 for t in story_data.get("tags", []) if t["tag_type"] == "urls")
-        nb_ipv4s = sum(1 for t in story_data.get("tags", []) if t["tag_type"] == "ipv4s")
+        nb_domains = sum(1 for t in tags if t["tag_type"] == "domains")
+        nb_urls = sum(1 for t in tags if t["tag_type"] == "urls")
+        nb_ipv4s = sum(1 for t in tags if t["tag_type"] == "ipv4s")
 
         tabular_features, max_cvss, has_kev, nb_cve = await self._build_features(
             title, cve_ids, nb_domains, nb_urls, nb_ipv4s

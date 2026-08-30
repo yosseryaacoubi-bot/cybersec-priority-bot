@@ -21,7 +21,8 @@ dependencies = [
     "xgboost",
     "imbalanced-learn",
     "numpy",
-    "scikit-learn"
+    "scikit-learn",
+    "pandas>=3.0.5",
 ]
 dynamic = ["version"]
 

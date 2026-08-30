@@ -2,11 +2,13 @@ import os
 import re
 import json
 import pickle
+import asyncio
+import traceback
 from pathlib import Path
 
 import numpy as np
 import httpx
-from groq import Groq
+from groq import Groq, RateLimitError
 
 
 CWE_COLUMNS = [
@@ -104,7 +106,7 @@ class CriticalityClassifier:
             return {"max_cvss": None, "cwe_principal": "unknown"}
 
         async with httpx.AsyncClient() as client:
-            infos = [await self._fetch_cve_info(cve, client) for cve in cve_ids]
+            infos = await asyncio.gather(*[self._fetch_cve_info(cve, client) for cve in cve_ids])
 
         cvss_scores = [i["cvss"] for i in infos if i.get("cvss") is not None]
         cwes = [i["cwe"] for i in infos if i.get("cwe")]
@@ -186,11 +188,29 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, respe
 }}"""
 
     async def predict(self, **kwargs) -> dict:
+        try:
+            return await self._predict_impl(**kwargs)
+        except Exception as e:
+            print(f"ERREUR predict(): {e}\n{traceback.format_exc()}", flush=True)
+            raise
+
+    async def _predict_impl(self, **kwargs) -> dict:
         title = kwargs["title"]
-        tags = kwargs.get("tags", [])
+        raw_tags = kwargs.get("tags", [])
+        if isinstance(raw_tags, dict):
+            tags = list(raw_tags.values())
+        elif isinstance(raw_tags, list):
+            tags = raw_tags
+        else:
+            tags = []
         news_items = kwargs.get("news_items", [])
         if not tags and news_items:
-            tags = [t for item in news_items for t in item.get("tags", [])]
+            for item in news_items:
+                item_tags = item.get("tags", [])
+                if isinstance(item_tags, dict):
+                    tags.extend(item_tags.values())
+                elif isinstance(item_tags, list):
+                    tags.extend(item_tags)
 
         cve_ids = list(dict.fromkeys(
             t["name"] for t in tags if t["tag_type"] == "cves"
@@ -213,20 +233,33 @@ Réponds UNIQUEMENT avec un objet JSON valide, sans texte avant ni après, respe
         urgence = self.urgence_map[niveau_predit]
 
         prompt = self._construire_prompt(title, niveau_predit, max_cvss, has_kev, nb_cve)
-        completion = self._get_groq_client().chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.0,
-            max_tokens=400,
-            response_format={"type": "json_object"},
-        )
-        llm_result = json.loads(completion.choices[0].message.content)
+        try:
+            completion = self._get_groq_client().chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=800,
+                response_format={"type": "json_object"},
+            )
+            llm_result = json.loads(completion.choices[0].message.content)
+            explication = llm_result["explication"]
+            action_recommandee = llm_result["action_recommandee"]
+            note_analyste = llm_result["note_analyste"]
+        except RateLimitError:
+            explication = "Analyse LLM temporairement indisponible (quota Groq atteint)."
+            action_recommandee = "Consulter le score ML ci-dessus ; ré-analyser cette story une fois le quota reinitialisé."
+            note_analyste = "Quota journalier Groq atteint au moment du traitement."
+        except Exception as e:
+            print(f"ERREUR LLM (non rate-limit): {e}", flush=True)
+            explication = "Analyse LLM indisponible pour cette story (erreur technique)."
+            action_recommandee = "Consulter le score ML ci-dessus ; vérifier les logs du bot pour plus de détails."
+            note_analyste = "Erreur lors de la génération de l'explication par le LLM."
 
         return {
             "niveau_predit": niveau_predit,
             "niveau_urgence": urgence,
-            "explication": llm_result["explication"],
-            "action_recommandee": llm_result["action_recommandee"],
-            "note_analyste": llm_result["note_analyste"],
+            "explication": explication,
+            "action_recommandee": action_recommandee,
+            "note_analyste": note_analyste,
             "signal_vigilance": self._calculer_signal_vigilance(max_cvss, has_kev),
         }
